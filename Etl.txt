@@ -1,0 +1,482 @@
+CREATE TABLE accounts (
+    id character varying(50) NOT NULL,
+    name character varying(50) NOT NULL,
+    parentid character varying(50) NOT NULL,
+    segment character varying(355) NOT NULL
+);
+
+
+ALTER TABLE accounts ADD CONSTRAINT accounts_id_key
+  UNIQUE (id);
+ALTER TABLE accounts ADD CONSTRAINT accounts_name_key
+  UNIQUE (name);
+
+
+CREATE TABLE bookings (
+    id character varying(50) NOT NULL,
+    officeid character varying(50) NOT NULL,
+    type character varying(50) NOT NULL,
+    bkgs integer NOT NULL,
+    sync character varying(4)
+);
+
+
+ALTER TABLE bookings ADD CONSTRAINT bookings_id_key
+  UNIQUE (id);
+
+
+CREATE TABLE offices (
+    id character varying(50) NOT NULL,
+    name character varying(50) NOT NULL,
+    accountid character varying(50) NOT NULL
+);
+
+
+ALTER TABLE offices ADD CONSTRAINT offices_id_key
+  UNIQUE (id);
+ALTER TABLE offices ADD CONSTRAINT offices_accountid_fkey
+  FOREIGN KEY (accountid) REFERENCES accounts(id);
+
+CREATE INDEX poffice ON public.offices USING btree (name);
+
+CREATE TABLE verifylogin (
+    id character varying(50) NOT NULL,
+    username character varying(50) NOT NULL,
+    password character varying(50) NOT NULL,
+    name character varying(50) NOT NULL
+);
+
+
+ALTER TABLE verifylogin ADD CONSTRAINT verifylogin_id_key
+  UNIQUE (id);
+  
+  
+ CREATE OR REPLACE FUNCTION public.syncbookings()
+ RETURNS boolean
+ LANGUAGE plpgsql
+AS $function$
+declare
+    officerowid varchar(20);
+    officerowidteck varchar(20);
+    flag integer:=0;
+    rec record ;
+Begin
+
+     for rec in 
+            select bkgs , officeid, id from public.bookings where sync is null
+     loop
+              
+            select distinct  d.sfid  into  officerowid from public.accounts a, public.offices b, tchonlinesalesforce.account c, tchonlinesalesforce.office__c d
+            where b.accountid = a.id and c.name=a.name and b.name= rec.officeid and d.account__c =c.sfid  and b.name=d.name;
+            
+            update tchonlinesalesforce.office__c set Booking_total__c = Booking_total__c+rec.bkgs where sfid = officerowid ;
+             
+            select distinct  d.sfid  into officerowidteck from public.accounts a, public.offices b, salesforcetecktail.account c, salesforcetecktail.office__c d
+            where b.accountid = a.id and c.name=a.name and b.name= rec.officeid and d.account__c =c.sfid  and b.name=d.name;
+            
+        	update salesforcetecktail.office__c set Booking_total__c = Booking_total__c+rec.bkgs where sfid = officerowidteck ;
+        	
+        	update public.bookings set sync ='Y' where id = rec.id;
+        	flag:=1;
+	 end loop ; 
+	 
+	 if (flag=1) then return true;
+	 else return false;
+	 end if;
+	 
+END;
+$function$;
+
+
+CREATE OR REPLACE FUNCTION public.syncparentteckonlineretail()
+ RETURNS boolean
+ LANGUAGE plpgsql
+AS $function$
+declare
+    parentrowidonline varchar(20);
+    parentrowidretail varchar(20);
+    reconline record ;
+    recteck record;
+begin 
+
+
+    for reconline in 
+         select sfid from tchonlinesalesforce.account where sync_parent_id__c is null and sfid is not null
+    loop
+       select c.sfid into parentrowidonline from public.accounts a, tchonlinesalesforce.account b, tchonlinesalesforce.account c, public.accounts d  
+       where a.name= b.name and b.sfid = reconline.sfid and a.id <> a.parentid
+       and a.parentid =d.id
+       and d.name =c.name;
+
+       Update tchonlinesalesforce.account set parentid =null,sync_parent_id__c=parentrowidonline where sfid =reconline.sfid;
+     end loop;
+     
+     
+     for recteck in 
+         select sfid from salesforcetecktail.account where sync_parent_id__c is null and sfid is not null
+    loop
+     
+      select c.sfid into parentrowidretail from public.accounts a, salesforcetecktail.account b, salesforcetecktail.account c, public.accounts d  
+       where a.name= b.name and b.sfid = recteck.sfid and a.id <> a.parentid
+       and a.parentid =d.id
+       and d.name =c.name;
+
+       Update salesforcetecktail.account set parentid=null,sync_parent_id__c=parentrowidretail where sfid =recteck.sfid;
+      
+      end loop;
+      
+   return true;
+   
+END;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.actaccounts()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+declare
+count INTEGER:=0;
+searchvarname char(40);
+varparentid char(40);
+
+BEGIN
+     if  (TG_OP = 'INSERT') then
+	     searchvarname:=NEW.name;
+	 else
+	     searchvarname:=OLD.name;
+	 end if;
+
+     select count(*) into count from tchonlinesalesforce.account where name = searchvarname;
+	 select distinct c.sfid into varparentid from public.accounts a, tchonlinesalesforce.account c
+     where  c.name=a.name and a.parentid= OLD.parentid;
+	 RAISE NOTICE 'trigger (%)', count;
+     if  (count =0) then
+       if (new.id = new.parentid) then
+           varparentid :=null;
+       end if;
+       RAISE NOTICE 'varparentid (%)', varparentid;
+       INSERT INTO tchonlinesalesforce.account(name,parentid,CentralSegment__c, booking_total__c) values (new.name,varparentid, NEW.Segment, 0);
+	   
+	 else
+	     if (new.id = new.parentid) then
+           varparentid := null;
+         end if;
+         RAISE NOTICE 'varparentid (%)', varparentid;
+		update tchonlinesalesforce.account set name=NEW.name, parentid = varparentid, CentralSegment__c = NEW.Segment where name =searchvarname;
+	 end if;
+
+	 select count(*) into count from salesforcetecktail.account where name = searchvarname;
+	 select distinct c.sfid into varparentid from public.accounts a, salesforcetecktail.account c
+     where  c.name=a.name and a.parentid= OLD.parentid;
+	 RAISE NOTICE 'trigger (%)', count;
+     if  (count =0) then
+        if (new.id = new.parentid) then
+           varparentid =null;
+       end if;
+       RAISE NOTICE 'varparentid (%)', varparentid;
+       INSERT INTO salesforcetecktail.account(name,parentid,CentralSegment__c, booking_total__c) values (new.name,varparentid, NEW.Segment, 0);
+	 else
+	     if (new.id = new.parentid) then
+           varparentid :=null;
+       end if;
+       RAISE NOTICE 'varparentid (%)', varparentid;
+		update salesforcetecktail.account set name=NEW.name, parentid = varparentid, CentralSegment__c = NEW.Segment where name =searchvarname;
+	 end if;
+
+
+	return NEW;
+END;
+$function$;
+
+
+CREATE OR REPLACE FUNCTION public.actaccountstriggeronlineparent()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+
+declare
+     parentrowid char(18):='';
+begin
+    select c.sfid into parentrowid from public.accounts a, tchonlinesalesforce.account b, tchonlinesalesforce.account c, public.accounts d  
+    where a.name= b.name and b.sfid = new.sfid and a.id <> a.parentid
+    and a.parentid =d.id
+    and d.name =c.name;
+    
+    update tchonlinesalesforce.account set parentid = parentrowid where sfid = new.sfid; 
+    
+    return new;
+END;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.actaccountstriggerteckparent()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+
+declare
+     parentrowid char(18):='';
+begin
+    select c.sfid into parentrowid from public.accounts a, salesforcetecktail.account b, salesforcetecktail.account c, public.accounts d  
+    where a.name= b.name and b.sfid = new.sfid and a.id<>a.parentid
+    and a.parentid =d.id
+    and d.name =c.name;
+    
+    update salesforcetecktail.account set parentid = parentrowid where sfid = new.sfid; 
+    
+    return new;
+END;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.actbookings()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+declare 
+    count INTEGER:=0;
+    accountrowid char(18);
+    officerowid char(18);
+    officerowidteck char(18);
+	searchvarname char(40);
+	searchvaroffice char(40);
+	searchvartype char(40);
+	searchvarbkgs integer :=0;
+BEGIN
+     if  (TG_OP = 'INSERT') then
+	     searchvarname:= NEW.id;
+	     searchvaroffice:=NEW.officeid;
+		 searchvartype:=NEW.type;
+		 searchvarbkgs:= NEW.bkgs;
+	 else
+	     searchvarname:= OLD.id;
+	     searchvaroffice:=OLD.officeid;
+		 searchvartype:=OLD.type;
+		 searchvarbkgs:= OLD.bkgs;
+		 
+	 end if;
+	 
+	 select count(*) into count from tchonlinesalesforce.booking__c where name =searchvarname;
+	 select distinct c.sfid , d.sfid  into accountrowid, officerowid from public.accounts a, public.offices b, tchonlinesalesforce.account c, tchonlinesalesforce.office__c d
+     where b.accountid = a.id and c.name=a.name and b.name= searchvaroffice and d.account__c =c.sfid  and b.name=d.name;
+    
+
+     if  (count =0) then 
+       INSERT INTO tchonlinesalesforce.booking__c(name,Account__c,office__c,type__c, bkgs__c, bookinguniqueid__c) values (new.id,accountrowid,officerowid,NEW.type, NEW.bkgs,new.id||'_'||accountrowid||'_'||officerowid);
+	 else
+		update tchonlinesalesforce.booking__c set Account__c=accountrowid, type__c=NEW.type, bkgs__c=NEW.bkgs where name =searchvarname;
+	 end if;
+	 
+	 select count(*) into count from salesforcetecktail.booking__c where name =searchvarname;
+	  select distinct c.sfid , d.sfid  into accountrowid, officerowidteck from public.accounts a, public.offices b, salesforcetecktail.account c,  salesforcetecktail.office__c d
+     where b.accountid = a.id and c.name=a.name and b.name= searchvaroffice and d.account__c =c.sfid  and b.name=d.name;
+ 
+     if  (count =0) then 
+       INSERT INTO salesforcetecktail.booking__c(name,Account__c, office__c,type__c, bkgs__c,bookinguniqueid__c) values (new.id,accountrowid,officerowidteck,NEW.type, NEW.bkgs,new.id||'_'||accountrowid||'_'||officerowid);
+	 else
+		update salesforcetecktail.booking__c set Account__c=accountrowid, type__c=NEW.type, bkgs__c=NEW.bkgs where name =searchvarname;
+	 end if;	
+	 
+	  if  (TG_OP != 'INSERT') then
+	      update tchonlinesalesforce.office__c set Booking_total__c = Booking_total__c+new.bkgs - OLD.bkgs where sfid = officerowid ;
+	      update salesforcetecktail.office__c set Booking_total__c = Booking_total__c+new.bkgs - OLD.bkgs where sfid = officerowidteck ;
+	  end if;
+   
+	return NEW;
+END;
+$function$;
+
+
+CREATE OR REPLACE FUNCTION public.actoffices()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+declare 
+    count INTEGER:=0;
+    accountrowid char(18);
+    accountrowidNewupdOnline char(18);
+    accountrowidNewupdRetail char(18);
+    bookvals integer :=0;
+	searchvarname char(40);
+	searchvaraccout char(40);
+	officeid char(20);
+BEGIN
+     if  (TG_OP = 'INSERT') then
+	     searchvarname:=NEW.name;
+		 searchvaraccout:=NEW.accountid;
+	 else
+	     searchvarname:=OLD.name;
+		 searchvaraccout:=old.accountid;
+		 
+		 select distinct c.sfid  into accountrowidNewupdOnline from public.accounts a, public.offices b, tchonlinesalesforce.account c
+         where b.accountid = a.id and c.name=a.name and b.accountid= NEW.accountid;
+         
+         select distinct c.sfid  into accountrowidNewupdRetail from public.accounts a, public.offices b, salesforcetecktail.account c
+         where b.accountid = a.id and c.name=a.name and b.accountid= NEW.accountid;
+	 end if;
+	 
+	 select count(*) into count from tchonlinesalesforce.Office__c where name =searchvarname;
+	 select distinct c.sfid  into accountrowid from public.accounts a, public.offices b, tchonlinesalesforce.account c
+     where b.accountid = a.id and c.name=a.name and b.accountid= searchvaraccout;
+	 
+	 
+	 raise NOTICE 'count (%)', count ;
+     if  (count =0) then 
+       INSERT INTO tchonlinesalesforce.Office__c(name,Account__c, booking_total__c) values (new.name,accountrowid,0);
+	 else
+	    select Booking_total__c, sfid into bookvals,officeid from   tchonlinesalesforce.Office__c where name=searchvarname;
+		update tchonlinesalesforce.Office__c set Account__c=accountrowidNewupdOnline, account__r__rowid__c=substring(accountrowidNewupdOnline from 1 for  15)  where name =searchvarname;
+		Update tchonlinesalesforce.account set Booking_total__c = Booking_total__c-bookvals where sfid =accountrowid;
+		Update tchonlinesalesforce.account set Booking_total__c = Booking_total__c+bookvals where sfid =accountrowidNewupdOnline;
+		update tchonlinesalesforce.booking__c set Account__c=accountrowidNewupdRetail, account__r__rowid__c=substring(accountrowidNewupdRetail from 1 for  15) where office__c = officeid;
+		raise NOTICE 'tchonlinesalesforce.account New (%)', accountrowidNewupdOnline;
+		raise NOTICE 'tchonlinesalesforce.account OLD (%)', accountrowid;
+	 end if;
+	 
+	 select count(*) into count from salesforcetecktail.Office__c where name = searchvarname;
+	 select distinct c.sfid  into accountrowid from public.accounts a, public.offices b, salesforcetecktail.account c
+     where b.accountid = a.id and c.name=a.name and b.accountid= searchvaraccout;
+	 raise NOTICE 'count next (%)', count ;
+     if  (count =0) then 
+       INSERT INTO salesforcetecktail.Office__c(name,Account__c, booking_total__c) values (new.name,accountrowid,0);
+	 else
+	    
+	    select Booking_total__c, sfid into bookvals,officeid  from   salesforcetecktail.Office__c  where name=searchvarname;
+		update salesforcetecktail.Office__c set Account__c=accountrowidNewupdRetail, account__r__rowid__c=substring(accountrowidNewupdRetail from 1 for  15)  where name =searchvarname;
+		Update salesforcetecktail.account set Booking_total__c = Booking_total__c-bookvals where sfid =accountrowid;
+		Update salesforcetecktail.account set Booking_total__c = Booking_total__c+bookvals where sfid =accountrowidNewupdRetail;
+		update salesforcetecktail.booking__c set Account__c=accountrowidNewupdRetail, account__r__rowid__c=substring(accountrowidNewupdRetail from 1 for  15) where office__c = officeid;
+		
+	 end if;
+	 
+   
+	return NEW;
+END;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.sumbookingsonline()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+
+declare 
+   accountrow char(18);
+   valtot integer :=0;
+   valtotacount integer :=0;
+   
+BEGIN 
+  
+   select account__c into accountrow from tchonlinesalesforce.Office__c where sfid=old.sfid ;
+   select coalesce(sum(Booking_total__c),0)   into valtot from tchonlinesalesforce.Office__c  where account__c = accountrow; 
+   select coalesce(sum(Booking_total__c),0)   into valtotacount from tchonlinesalesforce.account where parentid = accountrow;
+   Update tchonlinesalesforce.Account set Booking_total__c =valtot+valtotacount where sfid=accountrow ; 
+   raise Notice 'Test sumbook Trigger (%)', accountrow;
+	return NEW;
+END;
+$function$;
+
+
+CREATE OR REPLACE FUNCTION public.sumbookingsonlineaccount()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+
+declare
+  valtot integer:=0;
+BEGIN 
+ 
+   select sum(Booking_total__c) into valtot from tchonlinesalesforce.Account where parentid = old.parentid;   
+   Update tchonlinesalesforce.Account set Booking_total__c =valtot where sfid=old.parentid ; 
+   raise Notice 'Test Trigger (%)', old.parentid;
+	return NEW;
+END;
+$function$;
+
+
+CREATE OR REPLACE FUNCTION public.sumbookingsretail()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+
+declare 
+   accountrow char(18);
+   valtot integer :=0;
+   valtotacount integer :=0;
+begin 
+   
+   select account__c into accountrow from salesforcetecktail.Office__c where sfid=old.sfid ;
+   select coalesce(sum(Booking_total__c),0)   into valtot from salesforcetecktail.Office__c  where account__c = accountrow; 
+   select coalesce(sum(Booking_total__c),0)    into valtotacount from salesforcetecktail.account where parentid = accountrow;
+   Update salesforcetecktail.Account set Booking_total__c =valtot+valtotacount where sfid=accountrow ;
+   
+	return NEW;
+END;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.sumbookingsretailaccount()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+declare
+    valtot integer:=0;
+begin 
+
+    select sum(Booking_total__c) into valtot from salesforcetecktail.Account where parentid = old.parentid;  
+   Update salesforcetecktail.Account set Booking_total__c =valtot where sfid=old.parentid; 
+   
+	return NEW;
+END;
+$function$;
+
+
+
+CREATE OR REPLACE FUNCTION public.syncparentteckonline()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+begin 
+   Update tchonlinesalesforce.account set sync_parent_id__c=new.parentid where sfid=new.sfid; 
+   
+	return NEW;
+END;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.syncparenttecktail()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+begin 
+   Update salesforcetecktail.account set sync_parent_id__c=new.parentid where sfid=new.sfid; 
+   
+	return NEW;
+END;
+$function$;
+
+
+CREATE TRIGGER sumbookingacount
+  AFTER UPDATE
+  ON salesforcetecktail.office__c
+  FOR EACH ROW
+  EXECUTE PROCEDURE sumbookingsretail();
+
+
+
+
+
+
+CREATE TRIGGER actaccountstriggerteckparent
+  AFTER UPDATE
+  ON salesforcetecktail.account
+  FOR EACH ROW
+  EXECUTE PROCEDURE actaccountstriggerteckparent();
+  
+  CREATE TRIGGER actofficestriggerretail
+  AFTER UPDATE
+  ON salesforcetecktail.account
+  FOR EACH ROW
+  WHEN ( ((old.booking_total__c <> new.booking_total__c) AND ((old.parentid)::text <> (old.sfid)::text))) 
+  EXECUTE PROCEDURE sumbookingsretailaccount();
+  
+
+CREATE TRIGGER actofficestrigger AFTER INSERT OR UPDATE ON offices FOR EACH ROW EXECUTE PROCEDURE actoffices();
+CREATE TRIGGER actaccountstrigger AFTER INSERT OR UPDATE ON accounts FOR EACH ROW EXECUTE PROCEDURE actaccounts();
+
+CREATE TRIGGER actofficestrigger AFTER INSERT OR UPDATE ON bookings FOR EACH ROW EXECUTE PROCEDURE actbooking);

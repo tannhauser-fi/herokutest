@@ -1,0 +1,136 @@
+{
+  "mappings": [
+    {
+      "object_name": "Account",
+      "config": {
+        "indexes": {
+          "RowID__c": {
+            "unique": true
+          },
+          "SystemModstamp": {
+            "unique": false
+          },
+          "Id": {
+            "unique": true
+          },
+          "MasterAccount__c": {
+            "unique": false
+          },
+          "ParentId": {
+            "unique": false
+          }
+        },
+        "sf_max_daily_api_calls": 30000,
+        "access": "read_write",
+        "upsert_field": "RowID__c",
+        "applied_at": "2019-09-05T15:41:33.716588Z",
+        "sf_polling_seconds": 600,
+        "sf_notify_enabled": true,
+        "fields": {
+          "Booking_total__c": {},
+          "ParentId": {},
+          "CentralSegment__c": {},
+          "RecordTypeId": {},
+          "Name": {},
+          "RowID__c": {},
+          "IsDeleted": {},
+          "SystemModstamp": {},
+          "CreatedDate": {},
+          "sync_parent_id__c": {},
+          "MasterAccount__c": {},
+          "Id": {}
+        }
+      }
+    },
+    {
+      "object_name": "Booking__c",
+      "config": {
+        "indexes": {
+          "SystemModstamp": {
+            "unique": false
+          },
+          "Account__c": {
+            "unique": false
+          },
+          "Id": {
+            "unique": true
+          },
+          "BookingUniqueId__c": {
+            "unique": true
+          }
+        },
+        "sf_max_daily_api_calls": 30000,
+        "access": "read_write",
+        "upsert_field": "BookingUniqueId__c",
+        "applied_at": "2019-09-05T11:16:55.468443Z",
+        "sf_polling_seconds": 600,
+        "sf_notify_enabled": true,
+        "fields": {
+          "Office__c": {},
+          "type__c": {},
+          "Name": {},
+          "bkgs__c": {},
+          "IsDeleted": {},
+          "SystemModstamp": {},
+          "Account__r__RowID__c": {},
+          "Last_Year_YTD__c": {},
+          "CreatedDate": {},
+          "Account__c": {},
+          "Id": {},
+          "BookingUniqueId__c": {}
+        }
+      }
+    },
+    {
+      "object_name": "Office__c",
+      "config": {
+        "indexes": {
+          "officeID__c": {
+            "unique": true
+          },
+          "SystemModstamp": {
+            "unique": false
+          },
+          "Account__c": {
+            "unique": false
+          },
+          "Id": {
+            "unique": true
+          }
+        },
+        "sf_max_daily_api_calls": 30000,
+        "access": "read_write",
+        "upsert_field": "officeID__c",
+        "applied_at": "2019-09-05T11:16:55.532124Z",
+        "sf_polling_seconds": 600,
+        "sf_notify_enabled": true,
+        "fields": {
+          "Booking_total__c": {},
+          "Name": {},
+          "officeID__c": {},
+          "IsDeleted": {},
+          "SystemModstamp": {},
+          "Account__r__RowID__c": {},
+          "CreatedDate": {},
+          "Account__c": {},
+          "Id": {}
+        }
+      }
+    }
+  ],
+  "connection": {
+    "app_name": "amadeuspoccgi",
+    "organization_id": "00D5E0000009njzUAA",
+    "exported_at": "2019-09-11T13:39:15.039859+00:00",
+    "features": {
+      "disable_bulk_writes": false,
+      "poll_db_no_merge": false,
+      "poll_external_ids": false,
+      "rest_count_only": false
+    },
+    "api_version": "46.0",
+    "name": "",
+    "logplex_log_enabled": false
+  },
+  "version": 1
+}
